@@ -72,6 +72,7 @@ A floating window for a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyA
 - The log pane is a separate copy and can't see a key kept only in memory: opening logs needs Remember key.
 - Limits: 10 error logs, 20 sparkline buckets, logs cut at 400,000 characters, countdowns updated once a minute.
 - `GET /observability/logs` returns 400 when the server doesn't log to file, so there is no general log view.
+- It assumes a CLIProxyAPI server, version 8 or later, with `management.secret-key` set (an empty key turns the management API off) and, when Herdr runs on another machine, `management.allow-remote: true` and a network path to its port (8317 by default). Open web UI needs the bundled Management Center (`management.disable-control-panel` false).
 - Built and tested on macOS. Linux uses `xdg-open`; on Windows, saving the key fails (no `mkdir -m` / `chmod`).
 - The mod reaches the network (your server), runs the programs above, and reads and writes the two files above.
 

@@ -98,6 +98,7 @@ A floating window for a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyA
 - Herdr doesn't live-reload a mod folder that's a symlink: install by copying.
 - The log pane is a separate copy and can't see a key kept only in memory: opening logs needs Remember key.
 - Limits: 20 buckets (3h 20m), 10 error logs, logs cut at 400,000 characters, countdowns updated once a minute, quota every 5 minutes.
+- It assumes a CLIProxyAPI server, version 8 or later, with `management.secret-key` set (an empty key turns the management API off) and, when Herdr runs on another machine, `management.allow-remote: true` and a network path to its port (8317 by default). Open web UI needs the bundled Management Center (`management.disable-control-panel` false).
 - Built and tested on macOS with three accounts (Claude Max 20x, Codex Pro, xAI X Premium+) and one API-key upstream. Kimi, Antigravity and other providers show the header fallback, if any.
 - The mod reaches the network (your server, and through it Anthropic, OpenAI and xAI), runs the programs above, and reads and writes the two files above.
 
