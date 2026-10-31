@@ -1,0 +1,4 @@
+{
+  "global": { "ctrl-shift-x": "mod.open:cliproxy" },
+  "terminal": { "ctrl-shift-x": "mod.open:cliproxy" }
+}
