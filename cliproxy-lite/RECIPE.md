@@ -1,6 +1,6 @@
 # CLI Proxy Lite
 
-A floating window for a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) server: whether it's reachable, each account's status and quota (Claude's 5-hour and 7-day windows, Codex's weekly window and credits), usage per upstream and the newest error logs. It also runs the everyday actions: enable or disable an account, refresh tokens, reset cooldowns. Rare admin work (config, OAuth logins, plugins) opens the server's own web UI, the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center), instead. It's the smaller sibling of [CLI Proxy](../cliproxy/), which adds live quota from each provider, a health verdict and sign-ins: install one or the other. It's a piece you add to your current layout: nothing in the layout changes.
+Press Ctrl+Shift+X for a compact window on your [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) server: whether it's up, each account's status, and quota read from the rate-limit headers on your own traffic (Claude's 5-hour and 7-day windows, Codex's weekly window and credits), with usage per upstream and the newest error logs. Turn accounts on or off, refresh tokens and reset cooldowns from it; everything else opens the server's [Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center). For live quota from each provider, a health view and sign-ins, install [CLI Proxy](../cliproxy/) instead: it's one or the other, and both share one login. Nothing in your layout changes.
 
 ![CLI Proxy Lite](preview.png)
 
