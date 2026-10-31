@@ -1,5 +1,0 @@
-{
-  "place": "none",
-  "title": "CLIProxy",
-  "overlay": { "kind": "window", "key": "cliproxy", "keep": true, "width": 340, "height": 0.9 }
-}

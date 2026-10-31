@@ -1,0 +1,5 @@
+{
+  "place": "none",
+  "title": "CLI Proxy Lite",
+  "overlay": { "kind": "window", "key": "cliproxy-lite", "keep": true, "width": 340, "height": 0.9 }
+}

@@ -1,13 +1,13 @@
-# CLIProxy
+# CLI Proxy Lite
 
-A floating window for a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) server: whether it's reachable, each account's status and quota (Claude's 5-hour and 7-day windows, Codex's weekly window and credits), usage per upstream and the newest error logs. It also runs the everyday actions: enable or disable an account, refresh tokens, reset cooldowns. Rare admin work (config, OAuth logins, plugins) opens the server's own web UI, the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center), instead. It's a piece you add to your current layout: nothing in the layout changes.
+A floating window for a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) server: whether it's reachable, each account's status and quota (Claude's 5-hour and 7-day windows, Codex's weekly window and credits), usage per upstream and the newest error logs. It also runs the everyday actions: enable or disable an account, refresh tokens, reset cooldowns. Rare admin work (config, OAuth logins, plugins) opens the server's own web UI, the [CLIProxyAPI Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center), instead. It's the smaller sibling of [CLI Proxy](../cliproxy/), which adds live quota from each provider, a health verdict and sign-ins: install one or the other. It's a piece you add to your current layout: nothing in the layout changes.
 
-![CLIProxy](preview.png)
+![CLI Proxy Lite](preview.png)
 
 ## What you see
 
 - **The window:** 340px wide and 90% of the window's height, in Herdr's window frame. **Ctrl+Shift+X** opens it. Drag it by its header; it stays where you drop it and comes back on the next start until you close it. Text is 13px, with your theme's colors throughout.
-- **Header**, 42px, bottom border: an 8px status dot (`ansi2` green when the server answers, `ansi1` red when it doesn't, `dim` while connecting or logged out), **CLIProxy** semibold, then the server version (`v8.0.32`, 11px, `dim`). On the right, 26px icon buttons: Refresh (spins while loading), Open web UI, and × close.
+- **Header**, 42px, bottom border: an 8px status dot (`ansi2` green when the server answers, `ansi1` red when it doesn't, `dim` while connecting or logged out), **CLI Proxy Lite** semibold, then the server version (`v8.0.32`, 11px, `dim`). On the right, 26px icon buttons: Refresh (spins while loading), Open web UI, and × close.
 - **Update strip**, 28px, `accent` text on an `accent` tint: "Update v8.0.48 available" when the server's latest version is newer. Clicking it opens the web UI.
 - **Problem banner**, `ansi1` text on an `ansi1` tint: "Proxy unreachable · no answer in 15 s", "Management key refused" or "Proxy error · 500: …". It has **Change key** (when refused) or **Change URL**, and **Retry**. The data underneath stays but fades to 45%.
 - **Body**, scrolling, 10px padding, 16px between sections. Section labels are 11px semibold `muted` with a count.
@@ -24,7 +24,7 @@ A floating window for a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyA
 - **Usage:** one card per upstream: the provider's name, the upstream's host only (never its hash or credentials), "10 ok · 143 failed" and the failure rate (50% and up `ansi1`, 10% and up `blocked`, else `muted`). Then a 26px sparkline of the last 20 ten-minute buckets (failed `ansi1` stacked on success `ansi2`; empty buckets are a 1px `border` line; each has a tooltip), with the first and last times under it.
 - **Errors:** the 10 newest error logs, 26px rows: the name without `.log`, ellipsized in the middle, and how long ago. Hidden when the server returns 400 for the list.
 - **Footer**, 10px `dim`: "Connected to host:8317 · Log out", then "Updated just now · every minute".
-- **Login**, in place of the body when there's no server or key, after Log out, or from Change key / Change URL: "Log in to CLIProxy" (16px semibold) and a line of explanation; Server URL and Fallback URL (optional) fields, or "Current URL" read-only with a **Change** link once one is saved; Management key, masked, with an eye to show it; a **Remember key** checkbox ("Saved to ~/.config/cliproxyapi/mgmt.key, readable only by you", or "Kept in memory until Herdr restarts; a saved key is removed"); any error in `ansi1`; a full-width 34px **Log in** button (`solid`); and Cancel when it was already set up.
+- **Login**, in place of the body when there's no server or key, after Log out, or from Change key / Change URL: "Log in to CLI Proxy Lite" (16px semibold) and a line of explanation; Server URL and Fallback URL (optional) fields, or "Current URL" read-only with a **Change** link once one is saved; Management key, masked, with an eye to show it; a **Remember key** checkbox ("Saved to ~/.config/cliproxyapi/mgmt.key, readable only by you", or "Kept in memory until Herdr restarts; a saved key is removed"); any error in `ansi1`; a full-width 34px **Log in** button (`solid`); and Cancel when it was already set up.
 - **Error log pane:** a pane with an "Error log" header and the log's name, then a read-only code view.
 
 ## How it behaves
@@ -41,8 +41,8 @@ A floating window for a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyA
 
 ## Built from
 
-- **One mod**, `mods/cliproxy/`:
-  - `mod.json`: `{ "place": "none", "title": "CLIProxy", "overlay": { "kind": "window", "key": "cliproxy", "keep": true, "width": 340, "height": 0.9 } }`. No layout change.
+- **One mod**, `mods/cliproxy-lite/`:
+  - `mod.json`: `{ "place": "none", "title": "CLI Proxy Lite", "overlay": { "kind": "window", "key": "cliproxy-lite", "keep": true, "width": 340, "height": 0.9 } }`. No layout change.
   - `api.js`: the client (`fetch` with a Bearer header, a 15 s race against `cx.sleep`, falling back to the second URL), the config and key files, the parsing (`cleanFile` keeps only the fields shown), URL cleanup, redaction and time formatting.
   - `main.js`: the view, the login form, the actions and the log pane (the same mod with `props: { log }`).
   - Icons drawn after Lucide, tinted: `refresh`, `external`, `x`, `eye`, `eye-off`, `check`.
@@ -50,8 +50,8 @@ A floating window for a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyA
 
   ```json
   {
-    "global": { "ctrl-shift-x": "mod.open:cliproxy" },
-    "terminal": { "ctrl-shift-x": "mod.open:cliproxy" }
+    "global": { "ctrl-shift-x": "mod.open:cliproxy-lite" },
+    "terminal": { "ctrl-shift-x": "mod.open:cliproxy-lite" }
   }
   ```
 
@@ -77,7 +77,7 @@ A floating window for a [CLIProxyAPI](https://github.com/router-for-me/CLIProxyA
 
 ## Done when
 
-- `herdr-app check mods/cliproxy` passes.
+- `herdr-app check mods/cliproxy-lite` passes.
 - Ctrl+Shift+X opens the window. With no `cliproxy.json` it shows the login form.
 - Logging in with a working URL and key shows the accounts and writes `cliproxy.json`. With Remember, `mgmt.key` is 600 in a 700 folder; without it, there's no key file.
 - A wrong key says "The server refused that key"; an address that doesn't answer says "Can't reach …". Neither saves anything.

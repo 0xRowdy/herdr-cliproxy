@@ -17,7 +17,7 @@ const providerName = (p) => NAMES[p] ?? (p ? p.charAt(0).toUpperCase() + p.slice
 const tone = (t, l) => l === "error" ? t.ansi1 : l === "warn" ? t.blocked : t.accent;
 const settle = (p) => p.then((value) => ({ value }), (error) => ({ error }));
 
-export default class CLIProxy extends View {
+export default class CLIProxyLite extends View {
   init(_props, cx) {
     this.log = props()?.log ?? null;
     if (this.log) return this.loadLog(cx);
@@ -120,7 +120,7 @@ export default class CLIProxy extends View {
   logout(cx) {
     cx.spawn(async (cx) => {
       try { await forgetKey(); }
-      catch (e) { notify({ title: "CLIProxy", body: `Couldn't remove the saved key · ${describe(e)}`, level: "error" }); return; }
+      catch (e) { notify({ title: "CLI Proxy Lite", body: `Couldn't remove the saved key · ${describe(e)}`, level: "error" }); return; }
       this.memKey = null; this.keySaved = false; this.refused = null; this.setupNeeded = true; this.editing = false;
       this.files = []; this.usage = []; this.errors = []; this.fetchedAt = undefined; this.state = "loading"; this.problem = null;
       this.prefill(this.config); this.changingUrl = !this.config; this.remember = true;
@@ -173,7 +173,7 @@ export default class CLIProxy extends View {
         if (!key) { this.setupNeeded = true; return; }
         await this.client.request(cx, key, method, path, { body, ms });
       } catch (e) {
-        notify({ title: "CLIProxy", body: describe(e), level: "error" });
+        notify({ title: "CLI Proxy Lite", body: describe(e), level: "error" });
       } finally {
         delete this.busy[id];
         this.refresh(cx, { force: true });
@@ -194,7 +194,7 @@ export default class CLIProxy extends View {
   }
 
   openLog(name) {
-    const args = { mod: "cliproxy", props: { log: name } };
+    const args = { mod: "cliproxy-lite", props: { log: name } };
     if (focused()?.pane) run("pane.split", { direction: "right", pane: focused().pane, ...args });
     else run("tab.new", { name: "error log", ...args });
   }
@@ -204,8 +204,8 @@ export default class CLIProxy extends View {
     cx.spawn(async (cx) => {
       try {
         const config = await readConfig(), key = await readKey();
-        if (!config) { this.logProblem = "Set up the CLIProxy panel first"; return; }
-        if (!key) { this.logProblem = "Turn on Remember key in the CLIProxy panel to open logs in a pane"; return; }
+        if (!config) { this.logProblem = "Log in to CLI Proxy Lite first"; return; }
+        if (!key) { this.logProblem = "Turn on Remember key in CLI Proxy Lite to open logs in a pane"; return; }
         const text = redact(await new Client(bases(config)).request(cx, key, "GET", `/observability/logs/errors/${encodeURIComponent(this.log)}`, { text: true }));
         const t = theme();
         this.code = EditorState.new({ language: "log", readonly: true,
@@ -232,7 +232,7 @@ export default class CLIProxy extends View {
     return div().id(id).size(26).flex().flex_none().items_center().justify_center().rounded(6).cursor_pointer().text_color(t.muted)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip).on_click(onClick)
-      .child(svg(`mods/cliproxy/${icon}.svg`).size(14).when(spinning, (e) => e.spin(900)));
+      .child(svg(`mods/cliproxy-lite/${icon}.svg`).size(14).when(spinning, (e) => e.spin(900)));
   }
 
   chip(text, color, id, tip) {
@@ -395,11 +395,11 @@ export default class CLIProxy extends View {
     const canCancel = !this.setupNeeded;
     const check = div().size(16).flex_none().rounded(4).border_1().flex().items_center().justify_center()
       .border_color(this.remember ? t.solid : t.input).bg(this.remember ? t.solid : t.surface)
-      .when(this.remember, (e) => e.child(svg("mods/cliproxy/check.svg").size(11).text_color(t.solid_foreground)));
+      .when(this.remember, (e) => e.child(svg("mods/cliproxy-lite/check.svg").size(11).text_color(t.solid_foreground)));
     return v_flex().id("cliproxy-setup").flex_1().min_h(0).overflow_y_scrollbar().p(16).gap(16)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .child(v_flex().gap(4)
-        .child(div().text_size(16).font_semibold().child("Log in to CLIProxy"))
+        .child(div().text_size(16).font_semibold().child("Log in to CLI Proxy Lite"))
         .child(div().text_size(12).text_color(t.muted).child("The CLIProxyAPI server this panel watches, and its management key.")))
       .child(this.serverFields(t))
       .child(this.field("key", "Management key", this.keyInput, t, {
@@ -433,7 +433,7 @@ export default class CLIProxy extends View {
     const head = h_flex().h(42).flex_none().px(12).gap(4).items_center().border_b(1).border_color(t.border)
       .child(div().id("cliproxy-dot").size(8).mr(4).flex_none().rounded(4).bg(ok ? t.ansi2 : this.state === "loading" || form ? t.dim : t.ansi1)
         .tooltip(ok ? "Reachable" : this.setupNeeded ? "Not set up" : this.problem ?? "Connecting…"))
-      .child(div().font_semibold().child("CLIProxy"))
+      .child(div().font_semibold().child("CLI Proxy Lite"))
       .when(Boolean(version) && !form, (e) => e.child(div().ml(4).text_size(11).text_color(t.dim).child(`v${String(version).replace(/^v/, "")}`)))
       .child(div().flex_1())
       .when(!form, (e) => e.child(this.iconButton("cliproxy-refresh", "refresh", "Refresh", t, (_e, cx) => this.refresh(cx, { force: true }), this.loading)))
