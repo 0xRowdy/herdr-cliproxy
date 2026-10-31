@@ -9,6 +9,6 @@
 
 Install one or the other: both open with Ctrl+Shift+X and share one login. CLI Proxy also asks Anthropic, OpenAI and xAI for each account's usage, through your server.
 
-To add one, ask your Herdr agent: *"Read ~/.config/herdr-app/AGENTS.md, then add this mod: github.com/&lt;owner&gt;/herdr-cliproxy/tree/main/cliproxy"* (or `cliproxy-lite`).
+To add one, ask your Herdr agent: *"Read ~/.config/herdr-app/AGENTS.md, then add this mod: github.com/0xRowdy/herdr-cliproxy/tree/main/cliproxy"* (or `cliproxy-lite`).
 
 Rare admin work (config, routing tiers, plugins, and sign-ins in Lite) stays in the server's own [Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center).
