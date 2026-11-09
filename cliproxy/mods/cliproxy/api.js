@@ -1,6 +1,8 @@
 // The CLIProxyAPI management API: requests, and the few fields the panel may show.
 // The key comes from the key file (or memory, when not remembered); it never reaches
-// the UI, logs, props or localStorage. Never call /config, /config.yaml or /credentials/download.
+// the UI, logs, props or localStorage. Never call /config, /config.yaml or /credentials/download
+// (client keys and OAuth tokens); the settings view reaches only the secret-free config paths
+// that settings.js whitelists, and the management secret only ever as its two leaves.
 import net from "net";
 import { readTextFile, writeTextFile, exec, home, appHome } from "herdr";
 

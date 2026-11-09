@@ -7,6 +7,7 @@ import {
 } from "./api.js";
 import { LIVE, QUOTA_EVERY, fetchQuota, headerQuota } from "./quota.js";
 import { SIGN_INS, SIGN_IN_POLL, SIGN_IN_LIMIT, signInFor, authUrlPath, callbackUrl, routingLine } from "./signin.js";
+import { GROUPS, FIELDS, fieldId, shown, readSettings, applyInputs, writesFor, clone, get, set } from "./settings.js";
 
 const POLL = 60000, LATEST_EVERY = 30 * 60000, REFRESH_ALL_MS = 300000;
 const KEY_FILE = "~/.config/cliproxyapi/mgmt.key";
@@ -29,6 +30,17 @@ const recall = (k) => { try { return JSON.parse(localStorage.getItem(k) ?? "null
 const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 export default class CLIProxy extends View {
+  // The mod's machines, so their rules live in one head:
+  // · phase() decides the view: a log-pane copy, the login form, or the panel, over
+  //   this.state = loading → ok | unreachable | error; a refused key holds out until the
+  //   key changes or Retry.
+  // · the login form: connecting → saved | formProblem; only a working URL and key are kept.
+  // · one sign-in at a time: flow.status starting → waiting → (sending → waiting) → ok | error,
+  //   and flowGen drops replies from a run that was replaced or cancelled.
+  // · each account's quota: live[auth_index] {busy, tried, data, error}, at most every 5 min.
+  // · every action is busy[id] while it runs, and the data refreshes after it ends.
+  // · the server settings view: this.settings is closed (null) → loading → ready ⇄ dirty →
+  //   saving → ready; what may be read and written lives in settings.js.
   init(_props, cx) {
     this.log = props()?.log ?? null;
     if (this.log) return this.loadLog(cx);
@@ -49,6 +61,7 @@ export default class CLIProxy extends View {
     this.callbackInput = InputState.new({ placeholder: "http://localhost:…/callback?code=…" });
     this.flow = null;      // the sign-in running now, if any: one at a time
     this.picking = false;  // the Add account provider list is open
+    this.settings = null;  // the server settings view: null is closed, openSettings opens it
     for (const [name, input] of [["url", this.urlInput], ["fallback", this.fallbackInput], ["key", this.keyInput], ["callback", this.callbackInput]]) {
       input.on("focus", (_e, cx) => { this.typing = name; cx.notify(); });
       input.on("blur", (_e, cx) => { if (this.typing === name) this.typing = null; cx.notify(); });
@@ -61,6 +74,7 @@ export default class CLIProxy extends View {
   async close() {
     this.code?.release();
     for (const input of [this.urlInput, this.fallbackInput, this.keyInput, this.callbackInput]) input?.release();
+    for (const input of Object.values(this.settings?.inputs ?? {})) input?.release();
   }
 
   refresh(cx, { force = false } = {}) {
@@ -76,11 +90,21 @@ export default class CLIProxy extends View {
     });
   }
 
+  // The one decision the render branches on: which of the three views shows. Every flag
+  // change (a log pane, the setup and edit flags, the server's own state) funnels through
+  // here, so no render branch re-derives it.
+  phase() {
+    if (this.log) return "log";
+    if (this.setupNeeded || this.editing) return "form";
+    return this.state;
+  }
+
   useConfig(config) {
     if (JSON.stringify(config) === JSON.stringify(this.config)) return;
     if (this.config && config?.url !== this.config.url) {
       this.files = []; this.usage = []; this.errors = []; this.fetchedAt = undefined; this.latest = null; this.latestAt = 0; this.state = "loading";
       this.live = {}; this.plans = {}; this.flow = null; this.flowGen = (this.flowGen ?? 0) + 1; this.picking = false;
+      this.closeSettings();
     }
     this.config = config; this.client = config ? new Client(bases(config)) : null;
   }
@@ -163,6 +187,7 @@ export default class CLIProxy extends View {
       this.memKey = null; this.keySaved = false; this.refused = null; this.setupNeeded = true; this.editing = false;
       this.files = []; this.usage = []; this.errors = []; this.fetchedAt = undefined; this.state = "loading"; this.problem = null;
       this.live = {}; this.plans = {}; this.flow = null; this.flowGen = (this.flowGen ?? 0) + 1; this.picking = false;
+      this.closeSettings();
       this.prefill(this.config); this.changingUrl = !this.config; this.remember = true;
       cx.notify();
     });
@@ -236,6 +261,103 @@ export default class CLIProxy extends View {
         if (r.code !== 0) cx.open_url(url);
       } catch { cx.open_url(url); }
     });
+  }
+
+  // ── settings ──────────────────────────────────────────────────────────
+
+  // The gear: closed → loading → ready, or straight back to closed.
+  openSettings(cx) {
+    if (this.settings) { this.closeSettings(); cx.notify(); return; }
+    this.settings = { phase: "loading", problem: null, saved: null, draft: null, inputs: {}, fieldProblems: {}, saving: false, savedAt: null };
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const key = (await readKey()) ?? this.memKey;
+        if (!key) { this.closeSettings(); this.setupNeeded = true; return; }
+        const saved = await readSettings(this.client, cx, key);
+        if (!this.settings) return;
+        this.settings.saved = saved;
+        this.settings.draft = clone(saved);
+        for (const [name, { g, f }] of FIELDS) {
+          if (f.kind !== "int" && f.kind !== "duration") continue;
+          const input = InputState.new({ placeholder: String(f.def ?? "") });
+          input.set_value(String(shown(saved, g, f) ?? ""));
+          input.on("focus", (_e, cx) => { this.typing = name; cx.notify(); });
+          input.on("blur", (_e, cx) => { if (this.typing === name) this.typing = null; cx.notify(); });
+          this.settings.inputs[name] = input;
+        }
+        this.settings.phase = "ready";
+      } catch (e) {
+        if (!this.settings) return;
+        this.settings.phase = "error";
+        this.settings.problem = describe(e);
+      } finally { cx.notify(); }
+    });
+  }
+
+  closeSettings() {
+    for (const input of Object.values(this.settings?.inputs ?? {})) input?.release();
+    this.settings = null;
+  }
+
+  // Save: the typed fields are validated first, then each changed group goes as one PATCH;
+  // what the server kept is read back, so the view shows its truth.
+  saveSettings(cx) {
+    const s = this.settings;
+    if (!s || s.phase !== "ready" || s.saving) return;
+    const { draft, problems } = applyInputs(s.saved, s.draft, s.inputs);
+    s.draft = draft; s.fieldProblems = problems;
+    const writes = writesFor(s.saved, s.draft);
+    if (Object.keys(problems).length || !writes.length) return cx.notify();
+    s.saving = true; s.problem = null;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const key = (await readKey()) ?? this.memKey;
+        if (!key) { this.closeSettings(); this.setupNeeded = true; cx.notify(); return; }
+        for (const w of writes) await this.client.request(cx, key, "PATCH", w.path, { body: w.body });
+        const saved = await readSettings(this.client, cx, key);
+        if (!this.settings) return;
+        this.settings.saved = saved;
+        this.settings.draft = clone(saved);
+        this.settings.fieldProblems = {};
+        this.refillInputs(saved);
+        this.settings.savedAt = Date.now();
+        this.settings.saving = false;
+        notify({ title: "CLI Proxy", body: `Saved ${writes.map((w) => w.label.toLowerCase()).join(", ")}`, level: "success", timeout: 3000 });
+        this.refresh(cx, { force: true });   // the routing line and the error list follow
+        cx.notify();
+      } catch (e) {
+        if (!this.settings) return;
+        this.settings.saving = false;
+        this.settings.problem = `Couldn't save · ${describe(e)}`;
+        notify({ title: "CLI Proxy", body: describe(e), level: "error" });
+        cx.notify();
+      }
+    });
+  }
+
+  revertSettings(cx) {
+    const s = this.settings;
+    if (!s || s.phase !== "ready" || !s.saved) return;
+    s.draft = clone(s.saved);
+    s.fieldProblems = {}; s.problem = null;
+    this.refillInputs(s.saved);
+    cx.notify();
+  }
+
+  refillInputs(saved) {
+    for (const [name, input] of Object.entries(this.settings?.inputs ?? {})) {
+      const spot = FIELDS.get(name);
+      if (spot) input.set_value(String(shown(saved, spot.g, spot.f) ?? ""));
+    }
+  }
+
+  setDraft(group, field, value, cx) {
+    const s = this.settings;
+    if (!s || s.phase !== "ready") return;
+    s.draft = set(s.draft, `${group.section}.${field.path}`, value);
+    cx.notify();
   }
 
   // ── sign-in ───────────────────────────────────────────────────────────
@@ -353,8 +475,8 @@ export default class CLIProxy extends View {
       .child(busy ? busyLabel ?? label : label);
   }
 
-  iconButton(id, icon, tip, t, onClick, spinning = false) {
-    return div().id(id).size(26).flex().flex_none().items_center().justify_center().rounded(6).cursor_pointer().text_color(t.muted)
+  iconButton(id, icon, tip, t, onClick, spinning = false, active = false) {
+    return div().id(id).size(26).flex().flex_none().items_center().justify_center().rounded(6).cursor_pointer().text_color(active ? t.accent : t.muted)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip).on_click(onClick)
       .child(svg(`mods/cliproxy/${icon}.svg`).size(14).when(spinning, (e) => e.spin(900)));
@@ -660,10 +782,103 @@ export default class CLIProxy extends View {
         .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { this.editing = false; this.changingUrl = false; this.formProblem = null; cx.notify(); }).child("Cancel")));
   }
 
+  // ── settings view ─────────────────────────────────────────────────────
+
+  draftSwitch(id, on, tip, t, onClick) {
+    return div().id(id).w(30).h(17).flex_none().rounded(9).relative().cursor_pointer()
+      .bg(on ? t.ansi2 : t.raised).border_1().border_color(on ? t.ansi2 : t.input)
+      .tooltip(tip)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => onClick(cx))
+      .child(div().absolute().top(1).left(on ? 14 : 1).size(13).rounded(7).bg(on ? "#ffffff" : t.muted).transition("left", 120));
+  }
+
+  settingRow(group, field, t) {
+    const s = this.settings, id = fieldId(group, field), problem = s.fieldProblems?.[id];
+    const value = get(s.draft[group.section], field.path);
+    const label = v_flex().min_w(0).flex_1().gap(2)
+      .child(div().text_size(12).child(field.label))
+      .when(Boolean(field.hint), (e) => e.child(div().text_size(11).text_color(t.dim).child(field.hint)))
+      .when(Boolean(field.warn) && value === false, (e) => e.child(div().text_size(11).text_color(t.blocked).child(field.warn)));
+    let control;
+    if (field.kind === "bool") {
+      control = this.draftSwitch(`set-${id}`, value === true, value === true ? "On · click to turn off" : "Off · click to turn on", t,
+        (cx) => this.setDraft(group, field, !(value === true), cx));
+    } else if (field.kind === "choice") {
+      control = h_flex().gap(6).flex_wrap()
+        .children(field.choices.map((c) => {
+          const active = c.value === value;
+          return div().id(`set-${id}-${c.value}`).h(24).px(8).flex().flex_none().items_center().rounded(6).cursor_pointer()
+            .border_1().border_color(active ? t.accent : t.border)
+            .bg(active ? t.accent + "18" : "transparent")
+            .text_size(11).font_semibold().text_color(active ? t.accent : t.muted)
+            .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+            .hover((st) => st.text_color(active ? t.accent : t.foreground))
+            .tooltip(c.hint)
+            .on_click((_e, cx) => this.setDraft(group, field, c.value, cx))
+            .child(c.label);
+        }));
+    } else {
+      control = h_flex().flex_none().w(field.kind === "int" ? 86 : 96).h(28).px(8).gap(4).items_center().rounded(6).cursor_text()
+        .bg(t.background).border_1().border_color(problem ? t.ansi1 : this.typing === id ? t.accent : t.border)
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .child(Input.new(s.inputs[id]).flex_1().min_w(0).h_full().text_size(12).text_color(t.foreground))
+        .when(Boolean(field.unit), (e) => e.child(div().text_size(11).text_color(t.dim).child(field.unit)));
+    }
+    return v_flex().id(`row-${id}`).py(4).gap(6)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(field.kind === "choice" ? label : h_flex().gap(10).items_center().child(label).child(control))
+      .when(field.kind === "choice", (e) => e.child(control))
+      .when(Boolean(problem), (e) => e.child(div().text_size(11).text_color(t.ansi1).child(problem)));
+  }
+
+  renderSettings(t) {
+    const s = this.settings;
+    if (s.phase === "loading") return v_flex().id("cliproxy-settings").flex_1().min_h(0).justify_center().items_center()
+      .child(h_flex().gap(8).items_center().text_size(12).text_color(t.dim)
+        .child(div().w(9).frames(SPIN, 80).child(SPIN[0])).child("Loading settings…"));
+    if (s.phase === "error") return v_flex().id("cliproxy-settings").flex_1().min_h(0).p(14).gap(10)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(div().text_size(12).text_color(t.ansi1).child(`Couldn't read the server's settings · ${s.problem}`))
+      .child(h_flex().gap(6)
+        .child(this.button("settings-back", "Back", t, (_e, cx) => { this.closeSettings(); cx.notify(); }))
+        .child(this.button("settings-retry", "Try again", t, (_e, cx) => { this.closeSettings(); this.openSettings(cx); })));
+
+    const writes = writesFor(s.saved, s.draft), dirty = writes.length > 0;
+    const save = h_flex().id("settings-save").h(24).px(8).gap(5).items_center().flex_none().rounded(6).border_1()
+      .border_color(dirty && !s.saving ? t.solid : t.border)
+      .bg(dirty && !s.saving ? t.solid : "transparent")
+      .text_size(11).font_semibold().text_color(dirty && !s.saving ? t.solid_foreground : t.dim)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .when(dirty && !s.saving, (e) => e.cursor_pointer().hover((st) => st.bg(t.hover)).on_click((_e, cx) => this.saveSettings(cx)))
+      .when(s.saving, (e) => e.child(div().w(9).frames(SPIN, 80).child(SPIN[0])))
+      .child(s.saving ? "Saving…" : dirty ? `Save${writes.length > 1 ? ` (${writes.length})` : ""}` : "Up to date");
+    const head = h_flex().h(36).flex_none().px(10).gap(6).items_center()
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(this.button("settings-back", "Back", t, (_e, cx) => { this.closeSettings(); cx.notify(); }))
+      .child(div().text_size(12).font_semibold().child("Server settings"))
+      .when(Boolean(s.savedAt), (e) => e.child(div().text_size(11).text_color(t.dim).child(`saved ${ago(s.savedAt)}`)))
+      .child(div().flex_1())
+      .when(dirty && !s.saving, (e) => e.child(this.button("settings-revert", "Revert", t, (_e, cx) => this.revertSettings(cx))))
+      .child(save);
+    const body = v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(10).gap(16)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .children(GROUPS.map((g) => v_flex().gap(8)
+        .child(this.section(g.title, null, t))
+        .child(v_flex().gap(2).p(10).rounded(8).border_1().border_color(t.border).bg(t.surface)
+          .children(g.fields.map((f) => this.settingRow(g, f, t))))))
+      .when(Boolean(s.problem), (e) => e.child(div().text_size(12).text_color(t.ansi1).child(s.problem)))
+      .child(v_flex().gap(4).items_center().text_size(11).text_color(t.dim)
+        .child(div().child("Keys, routing tiers, plugins and TLS stay in the web UI."))
+        .child(div().id("settings-web").text_color(t.muted).cursor_pointer()
+          .hover((st) => st.text_color(t.foreground)).on_click((_e, cx) => this.openWebUI(cx)).child("Open web UI")));
+    return v_flex().id("cliproxy-settings").flex_1().min_h(0).child(head).child(body);
+  }
+
   render(cx) {
     const t = theme(), now = Date.now();
     if (this.log) return this.renderLog(t);
-    const form = this.setupNeeded || this.editing, ok = this.state === "ok" && !form, version = this.client?.version;
+    const phase = this.phase(), form = phase === "form", ok = phase === "ok", version = this.client?.version;
     const update = newer(this.latest, version) ? this.latest : null, refreshingAll = Boolean(this.busy.all);
     const hasData = this.fetchedAt !== undefined;
 
@@ -674,11 +889,13 @@ export default class CLIProxy extends View {
       .when(Boolean(version) && !form, (e) => e.child(div().ml(4).text_size(11).text_color(t.dim).child(`v${String(version).replace(/^v/, "")}`)))
       .child(div().flex_1())
       .when(!form, (e) => e.child(this.iconButton("cliproxy-refresh", "refresh", "Refresh", t, (_e, cx) => this.refresh(cx, { force: true }), this.loading)))
+      .when(!form, (e) => e.child(this.iconButton("cliproxy-settings", "sliders", this.settings ? "Close settings" : "Server settings", t, (_e, cx) => this.openSettings(cx), false, Boolean(this.settings))))
       .when(Boolean(this.config), (e) => e.child(this.iconButton("cliproxy-web", "external", "Open web UI", t, (_e, cx) => this.openWebUI(cx))))
       .when(Boolean(props()?.overlay), (e) => e.child(this.iconButton("cliproxy-close", "x", "Close", t, () => closeOverlay(props().overlay))));
 
     const root = v_flex().id("cliproxy").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13).child(head);
     if (form) return root.child(this.renderForm(t));
+    if (this.settings) return root.child(this.renderSettings(t));
 
     const banner = !ok && this.state !== "loading" ? h_flex().flex_none().px(12).py(8).gap(6).items_center().bg(t.ansi1 + "18").border_b(1).border_color(t.border)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
