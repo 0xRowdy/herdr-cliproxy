@@ -18,6 +18,13 @@ const tone = (t, l) => l === "error" ? t.ansi1 : l === "warn" ? t.blocked : t.ac
 const settle = (p) => p.then((value) => ({ value }), (error) => ({ error }));
 
 export default class CLIProxyLite extends View {
+  // The mod's machines, so their rules live in one head:
+  // · phase() decides the view: a log-pane copy, the login form, or the panel, over
+  //   this.state = loading → ok | unreachable | error; a refused key holds out until the
+  //   key changes or Retry.
+  // · the login form: connecting → saved | formProblem; only a working URL and key are kept.
+  // · every action is busy[id] while it runs, and the data refreshes after it ends.
+  // · server settings live in the CLI Proxy mod and the web UI, never here.
   init(_props, cx) {
     this.log = props()?.log ?? null;
     if (this.log) return this.loadLog(cx);
@@ -56,6 +63,15 @@ export default class CLIProxyLite extends View {
         if (this.again) this.refresh(cx);
       }
     });
+  }
+
+  // The one decision the render branches on: which of the three views shows. Every flag
+  // change (a log pane, the setup and edit flags, the server's own state) funnels through
+  // here, so no render branch re-derives it.
+  phase() {
+    if (this.log) return "log";
+    if (this.setupNeeded || this.editing) return "form";
+    return this.state;
   }
 
   useConfig(config) {
@@ -426,7 +442,7 @@ export default class CLIProxyLite extends View {
   render(cx) {
     const t = theme(), now = Date.now();
     if (this.log) return this.renderLog(t);
-    const form = this.setupNeeded || this.editing, ok = this.state === "ok" && !form, version = this.client?.version;
+    const phase = this.phase(), form = phase === "form", ok = phase === "ok", version = this.client?.version;
     const update = newer(this.latest, version) ? this.latest : null, refreshingAll = Boolean(this.busy.all);
     const hasData = this.fetchedAt !== undefined;
 
