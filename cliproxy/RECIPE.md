@@ -1,13 +1,13 @@
 # CLI Proxy
 
-Press Ctrl+Shift+X for the [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) [Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center)'s day-to-day view as a Herdr window: a health verdict with success rate and throughput, live quota as each provider reports it (plan, what's left in each window, extra usage, credits), every account's recent requests, API-key upstreams and the newest error logs. Sign accounts in, turn them on or off, refresh tokens and reset cooldowns from it; config, routing tiers, plugins and anything that spends reset credits stay in the Management Center. The fuller sibling of [CLI Proxy Lite](../cliproxy-lite/): it's one or the other, and both share one login. Nothing in your layout changes.
+Press Ctrl+Shift+X for the [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) [Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center)'s day-to-day view as a Herdr pane — its own tab, or a page beside your work like the Files panel: a health verdict with success rate and throughput, live quota as each provider reports it (plan, what's left in each window, extra usage, credits), every account's recent requests, API-key upstreams and the newest error logs. Sign accounts in, turn them on or off, refresh tokens, reset cooldowns and set the server's everyday settings — routing, logging, management access — from it; routing tiers, plugins, keys and anything that spends reset credits stay in the Management Center. The fuller sibling of [CLI Proxy Lite](../cliproxy-lite/): it's one or the other, and both share one login. Nothing in your layout changes until you open it.
 
 ![CLI Proxy](preview.png)
 
 ## What you see
 
-- **The window:** 460px wide and 90% of the window's height, in Herdr's window frame. **Ctrl+Shift+X** opens it. Drag it by its header; it stays where you drop it and comes back on the next start until you close it. Text is 13px, with your theme's colors throughout.
-- **Header**, 42px, bottom border: an 8px status dot (`ansi2` when the server answers, `ansi1` when it doesn't, `dim` while connecting or logged out), **CLI Proxy** semibold, the server version (`v8.0.32`, 11px `dim`), then 26px icon buttons: Refresh (spins while loading), Open web UI, and × close.
+- **The pane:** **Ctrl+Shift+X** opens it as its own tab (`tab.new {name: "CLI Proxy", mod: "cliproxy"}`); a layout can also hold it as a side-panel page like the Files panel — same mod, whatever pane it's given. It fills the pane's width; text is 13px, with your theme's colors throughout. In a tab, closing the tab closes the view; a hidden panel copy keeps running and comes back as it was.
+- **Header**, 42px, bottom border: an 8px status dot (`ansi2` when the server answers, `ansi1` when it doesn't, `dim` while connecting or logged out), **CLI Proxy** semibold, the server version (`v8.0.32`, 11px `dim`), then 26px icon buttons: Refresh (spins while loading), Server settings (a sliders glyph, in `accent` while its view is open), Open web UI, and × close.
 - **Update strip**, 28px, `accent` text on an `accent` tint: "Update v8.0.48 available". Clicking it opens the web UI.
 - **Problem banner**, `ansi1` on an `ansi1` tint: "Proxy unreachable · no answer in 15 s", "Management key refused" or "Proxy error · …", with **Change key** (when refused) or **Change URL**, and **Retry**. The data underneath stays and fades to 45%.
 - **Body**, scrolling, 10px padding, 16px between sections. Section labels are 11px semibold `muted` with a count.
@@ -37,6 +37,7 @@ Press Ctrl+Shift+X for the [CLIProxyAPI](https://github.com/router-for-me/CLIPro
 - **API-key upstreams** (shown only when there are any): one card each with the provider's name, the upstream's host only (never its hash or credentials), "10 ok · 143 failed", the failure rate (50% and up `ansi1`, 10% and up `blocked`) and a 26px chart like the health card's.
 - **Errors:** a folding section, closed at first: the header is a chevron, "Errors", the count and, while closed, "newest 7m ago". Open, it lists the 10 newest error logs in 26px rows: the name without `.log`, ellipsized in the middle, and how long ago. Hidden when the server returns 400 for the list.
 - **Footer**, 10px `dim`: "Connected to host:8317 · Log out", then "Updated just now · every minute, quota every 5".
+- **Server settings**, in place of the body while open: a bar with **Back**, "Server settings", "saved just now" after a save, **Revert** while something changed, and **Save** (solid when something changed, "Up to date" when not, "Saving…" with a spinner during). Three cards of rows: **Routing** — Strategy as three buttons (Round-robin, Weighted, Fill-first, each with a tooltip), Session affinity, Affinity lasts (a duration like `1h`), Request retries, Retry wait (seconds), Disable cooldowns, Require model prefix; **Logging & usage** — Debug logging, Log to files, Record requests, Error logs kept, Usage statistics; **Management access** — Allow remote (a `blocked` warning under it while off) and Disable web UI. Switches sit right of their labels; numbers and durations type into small fields whose border turns `ansi1` with the reason under them when invalid. Under the cards: "Keys, routing tiers, plugins and TLS stay in the web UI." with an Open web UI link.
 - **Login**, in place of the body when there's no server or key, after Log out, or from Change key / Change URL: "Log in to CLI Proxy", Server URL and Fallback URL (optional) fields or "Current URL" read-only with **Change**, Management key (masked, with an eye), **Remember key**, any error in `ansi1`, a full-width 34px **Log in** button (`solid`), and Cancel when it was already set up.
 - **Error log pane:** a pane with an "Error log" header and the log's name over a read-only code view.
 
@@ -47,6 +48,7 @@ Press Ctrl+Shift+X for the [CLIProxyAPI](https://github.com/router-for-me/CLIPro
 - Each request has 15 seconds, and each quota request 20. A read that can't reach the server tries the fallback URL; an action that times out isn't retried.
 - **Switch:** `PATCH /credentials/status {name, disabled, auth_index}`. **Refresh token:** `POST /credentials/refresh {name, auth_index}`. **Refresh all:** `POST /credentials/refresh {all: true}`, waiting up to 5 minutes with a spinner. **Reset cooldown:** `POST /routing/cooldown/reset {auth_index}`. A failure shows a toast; the data refreshes either way.
 - **Sign-in:** `GET /oauth/auth-url?provider=<id>` (with `&is_webui=true` for browser sign-ins, `&auth_index=<index>` to sign an account in again) gives `{url, state, user_code?, expires_in?}`. The link opens in the browser at once. `GET /oauth/status?state=<state>` is asked every 3 seconds until `ok` or `error`, or until `expires_in` (else 15 minutes) runs out. A pasted address goes to `POST /oauth/callback {provider, redirect_url}`, as pasted except for xAI: when Grok shows only a code or a bare query, it's rebuilt as `http://127.0.0.1:56121/callback?state=<state>&code=<code>`. **Cancel** sends `DELETE /oauth/session?state=<state>`, which only ends that pending sign-in. Success refreshes the accounts. The server's optional test request after sign-in (`verify`) is never asked for: it spends tokens.
+- **Server settings** (the gear): opened, it reads the four secret-free config paths — `GET /config/routing`, `/config/observability`, and the management leaves `allow-remote` and `disable-control-panel` (a missing leaf is the server's default). **Save** sends one PATCH per changed group: routing and observability as the server's own object with the changed leaves replaced, management as its changed leaves only — the management secret is never read or sent. It then reads everything back (the fields show what the server kept), toasts which groups saved, and refreshes the panel, so the health card's routing line follows. A field the server omits stays omitted unless it's changed; defaults are never written just by opening the view. A successful write also saves the server's config file in the v8 layout, its own migration. **Revert** drops the edits and retypes the fields; **Back** closes the view. Logging out or switching servers closes it too.
 - A refused key (401 or 403) stops the polling for that key until it changes or you press Retry: the server bans addresses after repeated bad keys.
 - Clicking an error log opens it in a read-only pane to the right of the focused pane (a tab when no pane has focus), with authorization, cookie and API-key headers, bearer tokens, token-like JSON fields and `key=` query values replaced by `[redacted]`.
 - **Log in** cleans the URL (drops a path such as `/management.html`; a bare host like `proxy` becomes `http://proxy:8317`) and tries `GET /credentials` with the key. Only a working pair is saved: the URL to `~/.config/herdr-app/cliproxy.json`, and with Remember the key to `~/.config/cliproxyapi/mgmt.key` (folder 700, file 600). Without Remember the key stays in memory and any saved key file is deleted. A blank key field uses the saved key. **Log out** forgets the key and keeps the URL. These are the same files CLI Proxy Lite uses.
@@ -55,23 +57,24 @@ Press Ctrl+Shift+X for the [CLIProxyAPI](https://github.com/router-for-me/CLIPro
 ## Built from
 
 - **One mod**, `mods/cliproxy/`:
-  - `mod.json`: `{ "place": "none", "title": "CLI Proxy", "overlay": { "kind": "window", "key": "cliproxy", "keep": true, "width": 460, "height": 0.9 } }`. No layout change.
+  - `mod.json`: `{ "place": "none", "title": "CLI Proxy" }` — nothing docks itself; the key (or a layout block) puts it somewhere.
   - `api.js`: the client (`fetch` with a Bearer header, a 15 s race against `cx.sleep`, falling back to the second URL), the config and key files, parsing (`cleanFile` keeps only the fields shown, plus each account's `recent_requests` buckets), URL cleanup, redaction, times, and the header-quota readers.
   - `quota.js`: live quota through `POST /requests/api-call` and its parsers, and `headerQuota` for the fallback.
   - `signin.js`: the sign-in providers, the auth-url query, the xAI callback rebuild and the routing line.
-  - `main.js`: the view, health card, login form, sign-in card, actions and log pane (the same mod with `props: { log }`).
-  - Icons drawn after Lucide, tinted: `refresh`, `external`, `x`, `eye`, `eye-off`, `check`, `chevron-right`, `chevron-down`.
+  - `settings.js`: the settings groups and their config paths, the read of the four whitelisted paths, typed-field validation, and the changed-groups diff that builds the PATCH bodies.
+  - `main.js`: the view, health card, login form, sign-in card, settings view, actions and log pane (the same mod with `props: { log }`).
+  - Icons drawn after Lucide, tinted: `refresh`, `sliders`, `external`, `x`, `eye`, `eye-off`, `check`, `chevron-right`, `chevron-down`.
 - **A `keys.json` snippet**, merged into the person's keys (the same key as CLI Proxy Lite's: install one or the other):
 
   ```json
   {
-    "global": { "ctrl-shift-x": "mod.open:cliproxy" },
-    "terminal": { "ctrl-shift-x": "mod.open:cliproxy" }
+    "global": { "ctrl-shift-x": { "command": "tab.new", "args": { "name": "CLI Proxy", "mod": "cliproxy" } } },
+    "terminal": { "ctrl-shift-x": { "command": "tab.new", "args": { "name": "CLI Proxy", "mod": "cliproxy" } } }
   }
   ```
 
 - **Herdr:** `exec`, `run` (`pane.split`, `tab.new`), `notify`, `closeOverlay`, `props`, `focused`, `theme`, `settings`, `window`, `readTextFile`, `writeTextFile`, `home`, `appHome`. **gpui:** `InputState` with `set_masked`, `Input`, `EditorState` and `Editor`, `.frames`, `.spin`, `.loop`, `.transition`, `.tooltip`, `svg` and `image`; `localStorage` for which cards are folded and whether Errors is open (it can be missing: folding then lasts the session).
-- **The management API** (base `/v8/management`), as CLIProxyAPI serves it and the Management Center uses it: `GET /credentials`, `/observability/usage/api-keys`, `/observability/logs/errors`, `/observability/logs/errors/<name>`, `/server/latest-version`; `PATCH /credentials/status`; `POST /credentials/refresh`, `/routing/cooldown/reset`, `/requests/api-call`; `GET /config/routing` (only that part of the config); and for sign-in `GET /oauth/auth-url`, `GET /oauth/status`, `POST /oauth/callback`, `DELETE /oauth/session`. The version comes from the `X-CPA-Version` / `X-Server-Version` response header, read with `net.connect` and a plain HTTP request carrying the same key.
+- **The management API** (base `/v8/management`), as CLIProxyAPI serves it and the Management Center uses it: `GET /credentials`, `/observability/usage/api-keys`, `/observability/logs/errors`, `/observability/logs/errors/<name>`, `/server/latest-version`; `PATCH /credentials/status`; `POST /credentials/refresh`, `/routing/cooldown/reset`, `/requests/api-call`; `GET /config/routing` and, for the settings view, `GET /config/observability`, `GET /config/management/allow-remote`, `GET /config/management/disable-control-panel` and `PATCH /config/routing`, `/config/observability`, `/config/management`; and for sign-in `GET /oauth/auth-url`, `GET /oauth/status`, `POST /oauth/callback`, `DELETE /oauth/session`. The version comes from the `X-CPA-Version` / `X-Server-Version` response header, read with `net.connect` and a plain HTTP request carrying the same key.
 - **`/requests/api-call`** takes `{auth_index, method: "GET", url, header}` and returns `{status_code, header, body}` (the body as a string). The server puts the account's token where the header says `Bearer $TOKEN$`. The console sends only these, with the Management Center's headers:
   - Claude: `https://api.anthropic.com/api/oauth/usage` (windows: `utilization` 0–100 and `resets_at`; `limits[]` with `kind`, `percent`, `severity`, `is_active`, `scope.model.display_name`; `spend` in minor units; `seven_day_breakdown.rows`) and, hourly, `/api/oauth/profile` (only `organization.rate_limit_tier`, `organization_type`, `subscription_status`, `account.has_claude_max` / `has_claude_pro` are read). Headers: `User-Agent: claude-cli/2.1.280 (external, cli)`, `anthropic-beta: oauth-2025-04-20`.
   - Codex: `https://chatgpt.com/backend-api/wham/usage` (`plan_type`; `rate_limit.primary_window` / `secondary_window` with `used_percent`, `limit_window_seconds`, `reset_at`; `credits`; `rate_limit_reset_credits.available_count`). Header: the `codex-tui` User-Agent.
@@ -80,7 +83,7 @@ Press Ctrl+Shift+X for the [CLIProxyAPI](https://github.com/router-for-me/CLIPro
 
 ## Watch out
 
-- Never call `GET /config`, `/config.yaml` or `/credentials/download` (client API keys and OAuth tokens). `GET /config/routing` is fine: that part holds no keys. Routing tiers can't be shown: API-key upstreams keep their priority in `/config/api-keys`, next to their keys. The only `DELETE` is `/oauth/session`, which cancels a pending sign-in. Never show `id_token`, `path` or any field not listed here.
+- Never call `GET /config`, `/config.yaml` or `/credentials/download` (client API keys and OAuth tokens). The settings view reads only the sections that hold no secrets — `/config/routing`, `/config/observability` — and the management section only as its two leaves: whole, it carries the management secret. A management PATCH sends only the changed leaves, so the secret is never read, sent or overwritten. A successful settings write saves the server's config file in the v8 layout, its own migration. Routing tiers can't be shown: API-key upstreams keep their priority in `/config/api-keys`, next to their keys. The only `DELETE` is `/oauth/session`, which cancels a pending sign-in. Never show `id_token`, `path` or any field not listed here.
 - `/requests/api-call` can send any request with an account's token. Send only the fixed GETs above. Never the "consume" endpoints behind the Management Center's Reset limits / Reset quota (they spend reset credits), and never xAI's paid health check (it's a real chat completion).
 - The Claude profile and xAI user replies carry names, emails and IDs. Read the plan fields and drop the rest.
 - Never put the key in the code, props, `localStorage`, logs or the UI.
@@ -92,8 +95,8 @@ Press Ctrl+Shift+X for the [CLIProxyAPI](https://github.com/router-for-me/CLIPro
 - The provider's `is_active` limit decides **binds**; it can differ from the header fallback's `Representative-Claim`.
 - Herdr's `fetch` gives no response headers, so the version needs the socket request: plain http only.
 - `writeTextFile` makes new files readable by everyone: create the key folder with `mkdir -m 700` and `chmod 600` the key file.
-- In a window, any press the mod doesn't stop drags it. Stop mouse-down on every control and on the body.
-- A window opens at the spot it was last dropped, even when a wider `mod.json` now runs it past the app's edge: drag it back once.
+- Stop mouse-down on every control and on the body: inside an overlay window any press would drag it, and in a pane it keeps clicks from pulling focus mid-press.
+- The close × only draws when the mod runs as an overlay (`props().overlay`); as a tab or panel page the tab bar or the panel's own toggle closes it.
 - The fold target is the chevron, icon and name only, never the whole header row: the enable switch sits in that row.
 - Herdr doesn't live-reload a mod folder that's a symlink: install by copying.
 - The log pane is a separate copy and can't see a key kept only in memory: opening logs needs Remember key.
@@ -105,7 +108,7 @@ Press Ctrl+Shift+X for the [CLIProxyAPI](https://github.com/router-for-me/CLIPro
 ## Done when
 
 - `herdr-app check mods/cliproxy` passes.
-- Ctrl+Shift+X opens the window; with no `cliproxy.json` it shows the login form, and after logging in to either mod the other needs no login.
+- Ctrl+Shift+X opens the CLI Proxy tab (and a layout holding it as a panel page shows it there); with no `cliproxy.json` it shows the login form, and after logging in to either mod the other needs no login.
 - The health card's request total matches the Management Center dashboard's "Requests handled" for the same window, and its verdict follows the 95% / 80% thresholds.
 - A Claude account shows its plan, 5-hour and 7-day as "% left" matching the Management Center's Quota page, the binding window marked, per-model limits and extra usage. A Codex account shows its plan, Weekly, credits and reset credits. An xAI account shows its plan, period reset and pay as you go.
 - With the live call failing, "Live quota unavailable" shows and the last reading (or the header reading) stays.
@@ -114,5 +117,6 @@ Press Ctrl+Shift+X for the [CLIProxyAPI](https://github.com/router-for-me/CLIPro
 - Clicking an error log opens a pane with any Authorization header redacted.
 - Add account → Claude opens the sign-in page, and finishing it (pasting the address if the page won't load) adds the account. Sign in again on an account signs that same account in and refuses another. Cancel ends the pending sign-in.
 - The health card's routing line matches the Management Center's Routing page (strategy, session affinity).
-- Folding a card leaves its header, chips, strip and totals; folding survives closing and reopening the window. Errors starts closed and says how old the newest log is.
+- The gear opens Server settings with the server's values; changing one switch, one number and one management leaf and saving round-trips through the web UI, Revert drops unsaved edits, an invalid number or duration blocks saving with its reason, and the management key still works afterwards.
+- Folding a card leaves its header, chips, strip and totals; folding survives closing and reopening the view. Errors starts closed and says how old the newest log is.
 - It's readable in both light and dark themes.
