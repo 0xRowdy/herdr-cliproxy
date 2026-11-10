@@ -446,9 +446,10 @@ export default class CLIProxyLite extends View {
     const update = newer(this.latest, version) ? this.latest : null, refreshingAll = Boolean(this.busy.all);
     const hasData = this.fetchedAt !== undefined;
 
+    const reachable = this.state === "ok" && !this.setupNeeded;
     const head = h_flex().h(42).flex_none().px(12).gap(4).items_center().border_b(1).border_color(t.border)
-      .child(div().id("cliproxy-dot").size(8).mr(4).flex_none().rounded(4).bg(ok ? t.ansi2 : this.state === "loading" || form ? t.dim : t.ansi1)
-        .tooltip(ok ? "Reachable" : this.setupNeeded ? "Not set up" : this.problem ?? "Connecting…"))
+      .child(div().id("cliproxy-dot").size(8).mr(4).flex_none().rounded(4).bg(reachable ? t.ansi2 : this.state === "loading" || this.setupNeeded ? t.dim : t.ansi1)
+        .tooltip(reachable ? "Reachable" : this.setupNeeded ? "Not set up" : this.problem ?? "Connecting…"))
       .child(div().font_semibold().child("CLI Proxy Lite"))
       .when(Boolean(version) && !form, (e) => e.child(div().ml(4).text_size(11).text_color(t.dim).child(`v${String(version).replace(/^v/, "")}`)))
       .child(div().flex_1())

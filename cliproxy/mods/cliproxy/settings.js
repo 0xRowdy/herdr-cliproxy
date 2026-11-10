@@ -97,11 +97,21 @@ export function applyInputs(saved, draft, inputs) {
         value = text;
       }
       const present = get(saved[group.section], field.path) !== undefined;
-    if (!present && value === field.def) continue; // equal to the server's default: leave it out, nothing to write
+      if (!present && value === field.def) { draft = set(draft, `${group.section}.${field.path}`, undefined); continue; }
       draft = set(draft, `${group.section}.${field.path}`, value);
     }
   }
   return { draft, problems };
+}
+
+// True when a typed field's text differs from what the server shows, valid or not, so a
+// number edited alone still lights Save and Revert and Save can say what is wrong.
+export function typedChanged(saved, inputs) {
+  return GROUPS.some((group) => group.fields.some((field) => {
+    if (field.kind !== "int" && field.kind !== "duration") return false;
+    const input = inputs[fieldId(group, field)];
+    return input ? String(input.value()).trim() !== String(shown(saved, group, field)) : false;
+  }));
 }
 
 // The writes a save performs, changed groups only. A field counts as changed against the

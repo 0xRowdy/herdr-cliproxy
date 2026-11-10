@@ -15,7 +15,7 @@ Both mods are a window onto a CLIProxyAPI server: they need one running, and do 
 - Its management API turned on: set `management.secret-key` in the server's `config.yaml` (an empty key turns the API off). That key is what you enter in the mod's login.
 - If Herdr runs on another machine than the server: `management.allow-remote: true`, and a network path to the server's port (8317 by default), such as Tailscale. Older configs call the section `remote-management`.
 - Optional: the [Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center), which the server serves at `/management.html` unless `management.disable-control-panel` is true. The mods' Open web UI button opens it.
-- [Herdr](https://herdr.dev); built and tested with the app's 0.1.10 release on macOS.
+- [Herdr](https://herdr.dev) 0.1.13 or newer for the `keys.json` snippets (they use the object binding form that opens the mod as a tab); built and tested on Linux with the app's 0.1.14 release, and earlier on macOS with 0.1.10.
 
 ## Install
 

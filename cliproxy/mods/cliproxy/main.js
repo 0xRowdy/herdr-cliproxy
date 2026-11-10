@@ -7,7 +7,7 @@ import {
 } from "./api.js";
 import { LIVE, QUOTA_EVERY, fetchQuota, headerQuota } from "./quota.js";
 import { SIGN_INS, SIGN_IN_POLL, SIGN_IN_LIMIT, signInFor, authUrlPath, callbackUrl, routingLine } from "./signin.js";
-import { GROUPS, FIELDS, fieldId, shown, readSettings, applyInputs, writesFor, clone, get, set } from "./settings.js";
+import { GROUPS, FIELDS, fieldId, shown, readSettings, applyInputs, typedChanged, writesFor, clone, get, set } from "./settings.js";
 
 const POLL = 60000, LATEST_EVERY = 30 * 60000, REFRESH_ALL_MS = 300000;
 const KEY_FILE = "~/.config/cliproxyapi/mgmt.key";
@@ -265,32 +265,34 @@ export default class CLIProxy extends View {
 
   // ── settings ──────────────────────────────────────────────────────────
 
-  // The gear: closed → loading → ready, or straight back to closed.
+  // The gear: closed → loading → ready, or straight back to closed. Each open is its own
+  // session: a read that finishes after a close, reopen or server change is dropped.
   openSettings(cx) {
     if (this.settings) { this.closeSettings(); cx.notify(); return; }
-    this.settings = { phase: "loading", problem: null, saved: null, draft: null, inputs: {}, fieldProblems: {}, saving: false, savedAt: null };
+    const s = this.settings = { phase: "loading", problem: null, saved: null, draft: null, inputs: {}, fieldProblems: {}, saving: false, savedAt: null };
+    const client = this.client, current = () => this.settings === s && this.client === client;
     cx.notify();
     cx.spawn(async (cx) => {
       try {
         const key = (await readKey()) ?? this.memKey;
-        if (!key) { this.closeSettings(); this.setupNeeded = true; return; }
-        const saved = await readSettings(this.client, cx, key);
-        if (!this.settings) return;
-        this.settings.saved = saved;
-        this.settings.draft = clone(saved);
+        if (!key) { if (current()) { this.closeSettings(); this.setupNeeded = true; } return; }
+        const saved = await readSettings(client, cx, key);
+        if (!current()) return;
+        s.saved = saved;
+        s.draft = clone(saved);
         for (const [name, { g, f }] of FIELDS) {
           if (f.kind !== "int" && f.kind !== "duration") continue;
           const input = InputState.new({ placeholder: String(f.def ?? "") });
           input.set_value(String(shown(saved, g, f) ?? ""));
           input.on("focus", (_e, cx) => { this.typing = name; cx.notify(); });
           input.on("blur", (_e, cx) => { if (this.typing === name) this.typing = null; cx.notify(); });
-          this.settings.inputs[name] = input;
+          s.inputs[name] = input;
         }
-        this.settings.phase = "ready";
+        s.phase = "ready";
       } catch (e) {
-        if (!this.settings) return;
-        this.settings.phase = "error";
-        this.settings.problem = describe(e);
+        if (!current()) return;
+        s.phase = "error";
+        s.problem = describe(e);
       } finally { cx.notify(); }
     });
   }
@@ -301,7 +303,9 @@ export default class CLIProxy extends View {
   }
 
   // Save: the typed fields are validated first, then each changed group goes as one PATCH;
-  // what the server kept is read back, so the view shows its truth.
+  // what the server kept is read back, so the view shows its truth. The save belongs to its
+  // session and server: if either changes, the remaining PATCHes are not sent. A failure
+  // after some groups landed re-reads the server so the next Save sends only what is left.
   saveSettings(cx) {
     const s = this.settings;
     if (!s || s.phase !== "ready" || s.saving) return;
@@ -309,31 +313,47 @@ export default class CLIProxy extends View {
     s.draft = draft; s.fieldProblems = problems;
     const writes = writesFor(s.saved, s.draft);
     if (Object.keys(problems).length || !writes.length) return cx.notify();
+    const client = this.client, current = () => this.settings === s && this.client === client;
+    const sent = Object.fromEntries(Object.entries(s.inputs).map(([name, input]) => [name, input.value().trim()]));
     s.saving = true; s.problem = null;
     cx.notify();
     cx.spawn(async (cx) => {
+      const applied = [];
       try {
         const key = (await readKey()) ?? this.memKey;
-        if (!key) { this.closeSettings(); this.setupNeeded = true; cx.notify(); return; }
-        for (const w of writes) await this.client.request(cx, key, "PATCH", w.path, { body: w.body });
-        const saved = await readSettings(this.client, cx, key);
-        if (!this.settings) return;
-        this.settings.saved = saved;
-        this.settings.draft = clone(saved);
-        this.settings.fieldProblems = {};
-        this.refillInputs(saved);
-        this.settings.savedAt = Date.now();
-        this.settings.saving = false;
+        if (!key) { if (current()) { this.closeSettings(); this.setupNeeded = true; } return; }
+        for (const w of writes) {
+          if (!current()) return;
+          await client.request(cx, key, "PATCH", w.path, { body: w.body });
+          applied.push(w);
+        }
+        const saved = await readSettings(client, cx, key);
+        if (!current()) return;
+        s.saved = saved;
+        s.draft = clone(saved);
+        s.fieldProblems = {};
+        this.refillInputs(saved, sent);
+        s.savedAt = Date.now();
+        s.saving = false;
         notify({ title: "CLI Proxy", body: `Saved ${writes.map((w) => w.label.toLowerCase()).join(", ")}`, level: "success", timeout: 3000 });
         this.refresh(cx, { force: true });   // the routing line and the error list follow
-        cx.notify();
       } catch (e) {
-        if (!this.settings) return;
-        this.settings.saving = false;
-        this.settings.problem = `Couldn't save · ${describe(e)}`;
-        notify({ title: "CLI Proxy", body: describe(e), level: "error" });
-        cx.notify();
-      }
+        if (!current()) return;
+        if (applied.length) {
+          try { s.saved = await readSettings(client, cx, (await readKey()) ?? this.memKey); }
+          catch {
+            for (const w of applied) {
+              const group = GROUPS.find((g) => g.patch === w.path);
+              s.saved = { ...s.saved, [group.section]: group.leaves ? { ...s.saved[group.section], ...w.body } : clone(w.body) };
+            }
+          }
+          if (!current()) return;
+        }
+        s.saving = false;
+        const done = applied.length ? `Saved ${applied.map((w) => w.label.toLowerCase()).join(", ")}; the rest didn't save · ` : "Couldn't save · ";
+        s.problem = `${done}${describe(e)}`;
+        notify({ title: "CLI Proxy", body: s.problem, level: "error" });
+      } finally { cx.notify(); }
     });
   }
 
@@ -346,16 +366,19 @@ export default class CLIProxy extends View {
     cx.notify();
   }
 
-  refillInputs(saved) {
+  // Retypes the typed fields from `saved`, except any the person changed since `sent` (a
+  // save in flight): those stay as unsaved edits.
+  refillInputs(saved, sent) {
     for (const [name, input] of Object.entries(this.settings?.inputs ?? {})) {
       const spot = FIELDS.get(name);
-      if (spot) input.set_value(String(shown(saved, spot.g, spot.f) ?? ""));
+      if (!spot || (sent && input.value().trim() !== sent[name])) continue;
+      input.set_value(String(shown(saved, spot.g, spot.f) ?? ""));
     }
   }
 
   setDraft(group, field, value, cx) {
     const s = this.settings;
-    if (!s || s.phase !== "ready") return;
+    if (!s || s.phase !== "ready" || s.saving) return;
     s.draft = set(s.draft, `${group.section}.${field.path}`, value);
     cx.notify();
   }
@@ -771,7 +794,7 @@ export default class CLIProxy extends View {
         .child(div().pt(1).child(check))
         .child(v_flex().gap(2).min_w(0)
           .child(div().text_size(12).child("Remember key"))
-          .child(div().text_size(11).text_color(t.dim).child(this.remember ? `Saved to ${KEY_FILE}, readable only by you` : "Kept in memory until Herdr restarts; a saved key is removed"))))
+          .child(div().text_size(11).text_color(t.dim).child(this.remember ? `Saved to ${KEY_FILE}, readable only by you` : "Kept in memory until this view closes; a saved key is removed"))))
       .when(Boolean(this.formProblem), (e) => e.child(div().text_size(12).text_color(t.ansi1).child(this.formProblem)))
       .child(h_flex().id("cliproxy-connect").h(34).gap(6).items_center().justify_center().rounded(8).text_size(13).font_semibold()
         .bg(this.connecting ? t.raised : t.solid).text_color(this.connecting ? t.dim : t.solid_foreground)
@@ -844,7 +867,7 @@ export default class CLIProxy extends View {
         .child(this.button("settings-back", "Back", t, (_e, cx) => { this.closeSettings(); cx.notify(); }))
         .child(this.button("settings-retry", "Try again", t, (_e, cx) => { this.closeSettings(); this.openSettings(cx); })));
 
-    const writes = writesFor(s.saved, s.draft), dirty = writes.length > 0;
+    const writes = writesFor(s.saved, s.draft), dirty = writes.length > 0 || typedChanged(s.saved, s.inputs);
     const save = h_flex().id("settings-save").h(24).px(8).gap(5).items_center().flex_none().rounded(6).border_1()
       .border_color(dirty && !s.saving ? t.solid : t.border)
       .bg(dirty && !s.saving ? t.solid : "transparent")
@@ -882,9 +905,10 @@ export default class CLIProxy extends View {
     const update = newer(this.latest, version) ? this.latest : null, refreshingAll = Boolean(this.busy.all);
     const hasData = this.fetchedAt !== undefined;
 
+    const reachable = this.state === "ok" && !this.setupNeeded;
     const head = h_flex().h(42).flex_none().px(12).gap(4).items_center().border_b(1).border_color(t.border)
-      .child(div().id("cliproxy-dot").size(8).mr(4).flex_none().rounded(4).bg(ok ? t.ansi2 : this.state === "loading" || form ? t.dim : t.ansi1)
-        .tooltip(ok ? "Reachable" : this.setupNeeded ? "Not set up" : this.problem ?? "Connecting…"))
+      .child(div().id("cliproxy-dot").size(8).mr(4).flex_none().rounded(4).bg(reachable ? t.ansi2 : this.state === "loading" || this.setupNeeded ? t.dim : t.ansi1)
+        .tooltip(reachable ? "Reachable" : this.setupNeeded ? "Not set up" : this.problem ?? "Connecting…"))
       .child(div().font_semibold().child("CLI Proxy"))
       .when(Boolean(version) && !form, (e) => e.child(div().ml(4).text_size(11).text_color(t.dim).child(`v${String(version).replace(/^v/, "")}`)))
       .child(div().flex_1())
